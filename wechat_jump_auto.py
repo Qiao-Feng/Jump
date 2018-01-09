@@ -35,7 +35,7 @@ except Exception as ex:
 VERSION = "1.1.1"
 
 # DEBUG 开关，需要调试的时候请改为 True，不需要调试的时候为 False
-DEBUG_SWITCH = False
+DEBUG_SWITCH = True
 
 
 # Magic Number，不设置可能无法正常执行，请根据具体截图从上到下按需
@@ -91,19 +91,23 @@ def find_piece_and_board(im):
     piece_x_sum = 0
     piece_x_c = 0
     piece_y_max = 0
+    piece_x = 0
+    piece_y = 0
     board_x = 0
     board_y = 0
     scan_x_border = int(w / 8)  # 扫描棋子时的左右边界
+    scan_start_x = 0  # 扫描的起始 x 坐标
     scan_start_y = 0  # 扫描的起始 y 坐标
     im_pixel = im.load()
-    # 以 50px 步长，尝试探测 scan_start_y
+    #开始 定位 小人儿的坐标
+    # 以 50px 步长，尝试探测 scan_start_y （这个是  整个图像中的颜色发化的最高点）
     for i in range(int(h / 3), int(h*2 / 3), 50):
         last_pixel = im_pixel[0, i]
         for j in range(1, w):
-            pixel = im_pixel[j, i]
             # 不是纯色的线，则记录 scan_start_y 的值，准备跳出循环
-            if pixel != last_pixel:
+            if im_pixel[j, i] != last_pixel:
                 scan_start_y = i - 50
+                scan_start_x = j
                 break
         if scan_start_y:
             break
@@ -114,8 +118,7 @@ def find_piece_and_board(im):
         # 横坐标方面也减少了一部分扫描开销
         for j in range(scan_x_border, w - scan_x_border):
             pixel = im_pixel[j, i]
-            # 根据棋子的最低行的颜色判断，找最后一行那些点的平均值，这个颜
-            # 色这样应该 OK，暂时不提出来
+            # 根据棋子的最低行的颜色判断，找最后一行那些点的平均值，这个颜色这样应该 OK，暂时不提出来
             if (50 < pixel[0] < 60) \
                     and (53 < pixel[1] < 63) \
                     and (95 < pixel[2] < 110):
@@ -127,7 +130,7 @@ def find_piece_and_board(im):
         return 0, 0, 0, 0
     piece_x = int(piece_x_sum / piece_x_c)
     piece_y = piece_y_max - piece_base_height_1_2  # 上移棋子底盘高度的一半
-
+#下面开始获得 目标 点的 坐标
     # 限制棋盘扫描的横坐标，避免音符 bug
     if piece_x < w/2:
         board_x_start = piece_x
@@ -135,33 +138,22 @@ def find_piece_and_board(im):
     else:
         board_x_start = 0
         board_x_end = piece_x
-
+#开始扫描  定位   目标点坐标
     for i in range(int(h / 3), int(h * 2 / 3)):
         last_pixel = im_pixel[0, i]
         if board_x or board_y:
             break
         board_x_sum = 0
         board_x_c = 0
-
-        for j in range(int(board_x_start), int(board_x_end)):
-            pixel = im_pixel[j, i]
-            # 修掉脑袋比下一个小格子还高的情况的 bug
-            if abs(j - piece_x) < piece_body_width:
-                continue
-
-            # 修掉圆顶的时候一条线导致的小 bug，这个颜色判断应该 OK，暂时不提出来
-            if abs(pixel[0] - last_pixel[0]) \
-                    + abs(pixel[1] - last_pixel[1]) \
-                    + abs(pixel[2] - last_pixel[2]) > 10:
-                board_x_sum += j
-                board_x_c += 1
-        if board_x_sum:
-            board_x = board_x_sum / board_x_c
+#获得 board X
+    board_x = scan_start_x
     last_pixel = im_pixel[board_x, i]
 
     # 从上顶点往下 +274 的位置开始向上找颜色与上顶点一样的点，为下顶点
     # 该方法对所有纯色平面和部分非纯色平面有效，对高尔夫草坪面、木纹桌面、
     # 药瓶和非菱形的碟机（好像是）会判断错误
+    
+    # 获得 board Y
     for k in range(i+274, i, -1):  # 274 取开局时最大的方块的上下顶点距离
         pixel = im_pixel[board_x, k]
         if abs(pixel[0] - last_pixel[0]) \
@@ -217,8 +209,6 @@ def main():
     debug.dump_device_info()
     screenshot.check_screenshot()
 
-    i, next_rest, next_rest_time = (0, random.randrange(3, 10),
-                                    random.randrange(5, 10))
     while True:
         screenshot.pull_screenshot()
         im = Image.open('./autojump.png')
@@ -233,19 +223,8 @@ def main():
                                         piece_y, board_x, board_y)
             debug.backup_screenshot(ts)
         im.close()
-        i += 1
-        if i == next_rest:
-            print('已经连续打了 {} 下，休息 {}s'.format(i, next_rest_time))
-            for j in range(next_rest_time):
-                sys.stdout.write('\r程序将在 {}s 后继续'.format(next_rest_time - j))
-                sys.stdout.flush()
-                time.sleep(1)
-            print('\n继续')
-            i, next_rest, next_rest_time = (0, random.randrange(30, 100),
-                                            random.randrange(10, 60))
         # 为了保证截图的时候应落稳了，多延迟一会儿，随机值防 ban
         time.sleep(random.uniform(0.9, 1.2))
-
 
 if __name__ == '__main__':
     main()
