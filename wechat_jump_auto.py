@@ -58,8 +58,8 @@ def set_button_position(im):
     w, h = im.size
     left = int(w / 2)
     top = int(1584 * (h / 1920.0))
-    left = int(random.uniform(left-50, left+50))
-    top = int(random.uniform(top-10, top+10))    # 随机防 ban
+    left = int(random.uniform(left - 50, left + 50))
+    top = int(random.uniform(top - 10, top + 10))    # 随机防 ban
     swipe_x1, swipe_y1, swipe_x2, swipe_y2 = left, top, left, top
 
 
@@ -88,92 +88,94 @@ def find_piece_and_board(im):
     """
     w, h = im.size
 
-    piece_x_sum = 0
-    piece_x_c = 0
-    piece_y_max = 0
-    piece_x = 0
-    piece_y = 0
-    board_x = 0
-    board_y = 0
+    piece_x = 0  # 小人的X坐标
+    piece_y = 0  # 小人的Y坐标
+    board_x_max = 0
+    board_y_max = 0
+    board_x = 0  # 目标点的X坐标
+    board_y = 0  # 目标点的Y坐标
     scan_x_border = int(w / 8)  # 扫描棋子时的左右边界
-    scan_start_x = 0  # 扫描的起始 x 坐标
     scan_start_y = 0  # 扫描的起始 y 坐标
+
     im_pixel = im.load()
-    #开始 定位 小人儿的坐标
+    # 开始 定位 小人儿的坐标
     # 以 50px 步长，尝试探测 scan_start_y （这个是  整个图像中的颜色发化的最高点）
-    for i in range(int(h / 3), int(h*2 / 3), 50):
-        last_pixel = im_pixel[0, i]
+    for i in range(int(h / 3), int(h * 2 / 3), 20):
+        last_pixel = im_pixel[0, i]  # The background color;
         for j in range(1, w):
             # 不是纯色的线，则记录 scan_start_y 的值，准备跳出循环
             if im_pixel[j, i] != last_pixel:
-                scan_start_y = i - 50
-                scan_start_x = j
+                scan_start_y = i - 20
                 break
         if scan_start_y:
             break
     print('scan_start_y: {}'.format(scan_start_y))
 
-    # 从 scan_start_y 开始往下扫描，棋子应位于屏幕上半部分，这里暂定不超过 2/3
+    # 从 scan_start_y 开始往下扫描，棋子应位于屏幕上半部分，这里暂定不超过 2/3 找到 新增 目标块的顶点
     for i in range(scan_start_y, int(h * 2 / 3)):
+        last_pixel = im_pixel[0, i]  # The background color;
         # 横坐标方面也减少了一部分扫描开销
         for j in range(scan_x_border, w - scan_x_border):
             pixel = im_pixel[j, i]
-            # 根据棋子的最低行的颜色判断，找最后一行那些点的平均值，这个颜色这样应该 OK，暂时不提出来
-            if (50 < pixel[0] < 60) \
-                    and (53 < pixel[1] < 63) \
-                    and (95 < pixel[2] < 110):
-                piece_x_sum += j
-                piece_x_c += 1
-                piece_y_max = max(i, piece_y_max)
-
-    if not all((piece_x_sum, piece_x_c)):
-        return 0, 0, 0, 0
-    piece_x = int(piece_x_sum / piece_x_c)
-    piece_y = piece_y_max - piece_base_height_1_2  # 上移棋子底盘高度的一半
-#下面开始获得 目标 点的 坐标
-    # 限制棋盘扫描的横坐标，避免音符 bug
-    if piece_x < w/2:
-        board_x_start = piece_x
-        board_x_end = w
-    else:
-        board_x_start = 0
-        board_x_end = piece_x
-#开始扫描  定位   目标点坐标
-    for i in range(int(h / 3), int(h * 2 / 3)):
-        last_pixel = im_pixel[0, i]
-        if board_x or board_y:
-            break
-        board_x_sum = 0
-        board_x_c = 0
-#获得 board X
-    board_x = scan_start_x
-    last_pixel = im_pixel[board_x, i]
-
-    # 从上顶点往下 +274 的位置开始向上找颜色与上顶点一样的点，为下顶点
-    # 该方法对所有纯色平面和部分非纯色平面有效，对高尔夫草坪面、木纹桌面、
-    # 药瓶和非菱形的碟机（好像是）会判断错误
-    
-    # 获得 board Y
-    for k in range(i+274, i, -1):  # 274 取开局时最大的方块的上下顶点距离
-        pixel = im_pixel[board_x, k]
-        if abs(pixel[0] - last_pixel[0]) \
-                + abs(pixel[1] - last_pixel[1]) \
-                + abs(pixel[2] - last_pixel[2]) < 10:
-            break
-    board_y = int((i+k) / 2)
-
-    # 如果上一跳命中中间，则下个目标中心会出现 r245 g245 b245 的点，利用这个
-    # 属性弥补上一段代码可能存在的判断错误
-    # 若上一跳由于某种原因没有跳到正中间，而下一跳恰好有无法正确识别花纹，则有
-    # 可能游戏失败，由于花纹面积通常比较大，失败概率较低
-    for j in range(i, i+200):
-        pixel = im_pixel[board_x, j]
-        if abs(pixel[0] - 245) + abs(pixel[1] - 245) + abs(pixel[2] - 245) == 0:
-            board_y = j + 10
+            # If the color changed
+            if abs(pixel[0] - last_pixel[0]) + abs(pixel[1] - last_pixel[1]) \
+                    + abs(pixel[2] - last_pixel[2]) > 10:
+                # 根据棋子的最低行的颜色判断，找最后一行那些点的平均值，这个颜色这样应该 OK，暂时不提出来
+                # 如果找到了小人的脑袋
+                if (50 < pixel[0] < 60) and (53 < pixel[1] < 63) and (95 < pixel[2] < 110):
+                    piece_x = j
+                    piece_y = i
+                    # 目标点低于小人的脑袋，说明目标很近，采用固定值，并直接返回。
+                    board_x = 0
+                    board_y = 0
+                    return piece_x, piece_y, board_x, board_y
+                else:  # 如果不是小人脑袋，那么这就是新出现的 目标块的最高点
+                    board_x_max = j
+                    board_y_max = i
+                    break
+        if not piece_x == piece_y == board_x_max == board_y_max == 0:
             break
 
-    if not all((board_x, board_y)):
-        return 0, 0, 0, 0
+    # 找小人的顶点,从 新增块的定点坐标向下扫描
+    for i in range(board_y_max, int(h * 2 / 3)):
+        # 横坐标方面也减少了一部分扫描开销
+        for j in range(scan_x_border, w - scan_x_border):
+            pixel = im_pixel[j, i]
+            if (50 < pixel[0] < 60) and (53 < pixel[1] < 63) and (95 < pixel[2] < 110):
+                piece_x = j
+                piece_y = i
+                break
+        if not piece_x == piece_y == 0:
+            break
+
+    # 下面开始获得 目标点坐标,即 目标块的中心点
+    # 判断新增目标块在屏幕的靠左还是靠右，然后从相应的方向反方向扫描同样的颜色，得到即为新增块的左或右顶点
+    if (board_x_max < (w / 2)):   # 块在左侧
+        if board_x_max - 300 < 0:
+            board_x_start = 0
+        else:
+            board_x_start = board_x_max - 300
+        for i in range(board_x_start, board_x_max):
+            for j in range(board_y_max, board_y_max + 200):
+                if im_pixel[i, j] == im_pixel[board_x_max, board_y_max]:
+                    board_y = j
+                    break
+            if board_y != 0:
+                break
+    else:  # 块在右侧
+        if board_x_max + 300 > w:
+            board_x_start = w
+        else:
+            board_x_start = board_x_max + 300
+        for i in range(board_x_start, board_x_max, -1):
+            for j in range(board_y_max, board_y_max + 200):
+                if im_pixel[i, j] == im_pixel[board_x_max, board_y_max]:
+                    board_y = j
+                    break
+            if board_y != 0:
+                break
+    board_x = board_x_max
+
     return piece_x, piece_y, board_x, board_y
 
 
@@ -183,7 +185,7 @@ def yes_or_no(prompt, true_value='y', false_value='n', default=True):
     """
     default_value = true_value if default else false_value
     prompt = '{} {}/{} [{}]: '.format(prompt, true_value,
-        false_value, default_value)
+                                      false_value, default_value)
     i = input(prompt)
     if not i:
         return default
@@ -225,6 +227,7 @@ def main():
         im.close()
         # 为了保证截图的时候应落稳了，多延迟一会儿，随机值防 ban
         time.sleep(random.uniform(0.9, 1.2))
+
 
 if __name__ == '__main__':
     main()
