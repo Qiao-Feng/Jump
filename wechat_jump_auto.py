@@ -226,7 +226,7 @@ def main():
             debug.backup_screenshot(ts)
         im.close()
         # 为了保证截图的时候应落稳了，多延迟一会儿，随机值防 ban
-        time.sleep(random.uniform(0.9, 1.2))
+        time.sleep(random.uniform(1.2, 1.6))
 
 
 if __name__ == '__main__':
