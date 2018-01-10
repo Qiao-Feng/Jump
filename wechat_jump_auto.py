@@ -38,8 +38,7 @@ VERSION = "1.1.1"
 DEBUG_SWITCH = True
 
 
-# Magic Number，不设置可能无法正常执行，请根据具体截图从上到下按需
-# 设置，设置保存在 config 文件夹中
+# Magic Number，不设置可能无法正常执行，请根据具体截图从上到下按需设置，设置保存在 config 文件夹中
 config = config.open_accordant_config()
 under_game_score_y = config['under_game_score_y']
 # 长按的时间系数，请自己根据实际情况调节
@@ -48,14 +47,14 @@ press_coefficient = config['press_coefficient']
 piece_base_height_1_2 = config['piece_base_height_1_2']
 # 棋子的宽度，比截图中量到的稍微大一点比较安全，可能要调节
 piece_body_width = config['piece_body_width']
+piece_body_height_1_2 = config['piece_body_height_1_2']
 
 
-def set_button_position(im):
+def set_button_position(w, h):
     """
     将 swipe 设置为 `再来一局` 按钮的位置
     """
     global swipe_x1, swipe_y1, swipe_x2, swipe_y2
-    w, h = im.size
     left = int(w / 2)
     top = int(1584 * (h / 1920.0))
     left = int(random.uniform(left - 50, left + 50))
@@ -67,7 +66,7 @@ def jump(distance):
     """
     跳跃一定的距离
     """
-    press_time = distance * press_coefficient
+    press_time = distance + press_coefficient
     press_time = max(press_time, 200)   # 设置 200ms 是最小的按压时间
     press_time = int(press_time)
     cmd = 'adb shell input swipe {x1} {y1} {x2} {y2} {duration}'.format(
@@ -82,22 +81,9 @@ def jump(distance):
     return press_time
 
 
-def find_piece_and_board(im):
-    """
-    寻找关键坐标
-    """
-    w, h = im.size
-
-    piece_x = 0  # 小人的X坐标
-    piece_y = 0  # 小人的Y坐标
-    board_x_max = 0
-    board_y_max = 0
-    board_x = 0  # 目标点的X坐标
-    board_y = 0  # 目标点的Y坐标
-    scan_x_border = int(w / 8)  # 扫描棋子时的左右边界
+def find_scan_start_y(w, h, im_pixel):
     scan_start_y = 0  # 扫描的起始 y 坐标
 
-    im_pixel = im.load()
     # 开始 定位 小人儿的坐标
     # 以 50px 步长，尝试探测 scan_start_y （这个是  整个图像中的颜色发化的最高点）
     for i in range(int(h / 3), int(h * 2 / 3), 20):
@@ -110,73 +96,95 @@ def find_piece_and_board(im):
         if scan_start_y:
             break
     print('scan_start_y: {}'.format(scan_start_y))
+    return scan_start_y
 
-    # 从 scan_start_y 开始往下扫描，棋子应位于屏幕上半部分，这里暂定不超过 2/3 找到 新增 目标块的顶点
-    for i in range(scan_start_y, int(h * 2 / 3)):
-        last_pixel = im_pixel[0, i]  # The background color;
+
+def find_piece(w, h, im_pixel, scan_start_x, scan_start_y):
+    piece_x = 0  # 小人的X坐标
+    piece_y = 0  # 小人的Y坐标
+    piece_x_max = 0
+    piece_y_max = 0
+    piece_x_sum = 0
+    piece_x_c = 0
+
+    # 从 scan_start_y 开始往下扫描，棋子应位于屏幕上半部分，这里暂定不超过 2/3
+    for i in range(int(h * 2 / 3), scan_start_y, -1):  # 从上到下
         # 横坐标方面也减少了一部分扫描开销
-        for j in range(scan_x_border, w - scan_x_border):
+        for j in range(scan_start_x, w - scan_start_x):  # 从左到右
             pixel = im_pixel[j, i]
-            # If the color changed
-            if abs(pixel[0] - last_pixel[0]) + abs(pixel[1] - last_pixel[1]) \
+            # 根据棋子的最低行的颜色判断，找最后一行那些点的平均值，这个颜
+            # 色这样应该 OK，暂时不提出来
+            if (50 < pixel[0] < 60) \
+                    and (53 < pixel[1] < 63) \
+                    and (95 < pixel[2] < 110):
+                piece_x_sum += j
+                piece_x_c += 1
+        if piece_x_c:
+            piece_y_max = i
+            piece_x = int(piece_x_sum / piece_x_c)
+            piece_y = piece_y_max - piece_body_height_1_2
+            break
+
+    return piece_x, piece_y
+
+
+def find_board(w, h, im_pixel, piece_x, piece_y, scan_start_y):
+    board_x = 0  # 目标点的X坐标
+    board_y = 0  # 目标点的Y坐标
+    board_x_sum = 0
+    board_x_c = 0
+    board_y_sum = 0
+    board_y_c = 0
+
+    # 缩小扫描范围，如果棋子在左侧，则从棋子向右扫描，反之相反
+    if piece_x < w / 2:
+        board_x_start = int(piece_x + piece_body_width / 2)
+        board_x_end = w - 1
+    else:
+        board_x_start = 0
+        board_x_end = int(piece_x - piece_body_width / 2)
+    # 只扫描到与棋子底部以上的部分
+    board_y_start = scan_start_y
+    board_y_end = piece_y
+
+    # 开始扫描  新目标块的 顶点X坐标
+    for i in range(board_y_start, board_y_end):  # 从上到下
+        for j in range(board_x_start, board_x_end):  # 从左到右
+            pixel = im_pixel[j, i]
+            last_pixel = im_pixel[j, i - 1]
+            # 修掉圆顶的时候一条线导致的小 bug，这个颜色判断应该 OK，暂时不提出来
+            if abs(pixel[0] - last_pixel[0]) \
+                    + abs(pixel[1] - last_pixel[1]) \
                     + abs(pixel[2] - last_pixel[2]) > 10:
-                # 根据棋子的最低行的颜色判断，找最后一行那些点的平均值，这个颜色这样应该 OK，暂时不提出来
-                # 如果找到了小人的脑袋
-                if (50 < pixel[0] < 60) and (53 < pixel[1] < 63) and (95 < pixel[2] < 110):
-                    piece_x = j
-                    piece_y = i
-                    # 目标点低于小人的脑袋，说明目标很近，采用固定值，并直接返回。
-                    board_x = 0
-                    board_y = 0
-                    return piece_x, piece_y, board_x, board_y
-                else:  # 如果不是小人脑袋，那么这就是新出现的 目标块的最高点
-                    board_x_max = j
-                    board_y_max = i
-                    break
-        if not piece_x == piece_y == board_x_max == board_y_max == 0:
+                board_x_sum += j
+                board_x_c += 1
+        if board_x_c:
+            board_x = int(board_x_sum / board_x_c)
+            # 临时保存 新块顶点的 Y坐标
+            board_y = i
             break
 
-    # 找小人的顶点,从 新增块的定点坐标向下扫描
-    for i in range(board_y_max, int(h * 2 / 3)):
-        # 横坐标方面也减少了一部分扫描开销
-        for j in range(scan_x_border, w - scan_x_border):
-            pixel = im_pixel[j, i]
-            if (50 < pixel[0] < 60) and (53 < pixel[1] < 63) and (95 < pixel[2] < 110):
-                piece_x = j
-                piece_y = i
+    # 开始扫描   新增目标块右顶点 Y坐标（从上到下，从右到左）
+#     if board_x < piece_x:  # 如果新块在棋子的左侧，且棋子和新块非常近，则从棋子的左侧向扫描，否则从新块
+#         board_x_end = max(board_x + 200, int(piece_x - piece_body_width / 2))
+    board_y_start = board_y
+    board_y_end = int(board_y + 187)
+
+    for i in range(board_x, w):  # 从右到左
+        board_y_temp = 0
+        for j in range(board_y_start, board_y_end):  # 从上到下，而且只扫描到 新块顶点向下180单位
+            pixel = im_pixel[i, j]
+            last_pixel = im_pixel[0, j]
+            # 比对当前点和该行的第一个点是否相同，如果不相同，则加和
+            if abs(pixel[0] - last_pixel[0]) \
+                + abs(pixel[1] - last_pixel[1]) \
+                    + abs(pixel[2] - last_pixel[2]) > 10:
+                board_y = board_y_temp = j
+            if board_y_temp:
                 break
-        if not piece_x == piece_y == 0:
+        if board_y_temp == 0:  # 如果上一次循环没有找到不同的颜色点
             break
-
-    # 下面开始获得 目标点坐标,即 目标块的中心点
-    # 判断新增目标块在屏幕的靠左还是靠右，然后从相应的方向反方向扫描同样的颜色，得到即为新增块的左或右顶点
-    if (board_x_max < (w / 2)):   # 块在左侧
-        if board_x_max - 300 < 0:
-            board_x_start = 0
-        else:
-            board_x_start = board_x_max - 300
-        for i in range(board_x_start, board_x_max):
-            for j in range(board_y_max, board_y_max + 200):
-                if im_pixel[i, j] == im_pixel[board_x_max, board_y_max]:
-                    board_y = j
-                    break
-            if board_y != 0:
-                break
-    else:  # 块在右侧
-        if board_x_max + 300 > w:
-            board_x_start = w
-        else:
-            board_x_start = board_x_max + 300
-        for i in range(board_x_start, board_x_max, -1):
-            for j in range(board_y_max, board_y_max + 200):
-                if im_pixel[i, j] == im_pixel[board_x_max, board_y_max]:
-                    board_y = j
-                    break
-            if board_y != 0:
-                break
-    board_x = board_x_max
-
-    return piece_x, piece_y, board_x, board_y
+    return board_x, board_y
 
 
 def yes_or_no(prompt, true_value='y', false_value='n', default=True):
@@ -214,11 +222,18 @@ def main():
     while True:
         screenshot.pull_screenshot()
         im = Image.open('./autojump.png')
+        w, h = im.size
+        im_pixel = im.load()
+        scan_start_x = int(w / 8)  # 扫描棋子时的左右边界
+        scan_start_y = find_scan_start_y(w, h, im_pixel)  # 扫描的起始 y 坐标
         # 获取棋子和 board 的位置
-        piece_x, piece_y, board_x, board_y = find_piece_and_board(im)
+        piece_x, piece_y = find_piece(
+            w, h, im_pixel, scan_start_x, scan_start_y)
+        board_x, board_y = find_board(
+            w, h, im_pixel, piece_x, piece_y, scan_start_y)
         ts = int(time.time())
         print(ts, piece_x, piece_y, board_x, board_y)
-        set_button_position(im)
+        set_button_position(w, h)
         jump(math.sqrt((board_x - piece_x) ** 2 + (board_y - piece_y) ** 2))
         if DEBUG_SWITCH:
             debug.save_debug_screenshot(ts, im, piece_x,
