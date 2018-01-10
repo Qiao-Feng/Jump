@@ -48,6 +48,8 @@ piece_base_height_1_2 = config['piece_base_height_1_2']
 # 棋子的宽度，比截图中量到的稍微大一点比较安全，可能要调节
 piece_body_width = config['piece_body_width']
 piece_body_height_1_2 = config['piece_body_height_1_2']
+sinA = config['sinA']
+tanA = config['tanA']
 
 
 def set_button_position(w, h):
@@ -135,6 +137,7 @@ def find_board(w, h, im_pixel, piece_x, piece_y, scan_start_y):
     board_x_c = 0
     board_y_sum = 0
     board_y_c = 0
+    board_y_top = 0
 
     # 缩小扫描范围，如果棋子在左侧，则从棋子向右扫描，反之相反
     if piece_x < w / 2:
@@ -161,14 +164,19 @@ def find_board(w, h, im_pixel, piece_x, piece_y, scan_start_y):
         if board_x_c:
             board_x = int(board_x_sum / board_x_c)
             # 临时保存 新块顶点的 Y坐标
-            board_y = i
+            board_y_top = i
             break
 
     # 开始扫描   新增目标块右顶点 Y坐标（从上到下，从右到左）
 #     if board_x < piece_x:  # 如果新块在棋子的左侧，且棋子和新块非常近，则从棋子的左侧向扫描，否则从新块
 #         board_x_end = max(board_x + 200, int(piece_x - piece_body_width / 2))
-    board_y_start = board_y
-    board_y_end = int(board_y + 187)
+    if abs(board_x - piece_x) < 260:  # 如果新块和棋子太近，则取固定值
+     #       board_y = piece_y + abs((board_x - piece_x) * tanA)
+        board_y = piece_y
+        return board_x, board_y
+
+    board_y_start = board_y_top
+    board_y_end = int(board_y_top + 187)
 
     for i in range(board_x, w):  # 从右到左
         board_y_temp = 0
@@ -210,11 +218,7 @@ def main():
     """
     主函数
     """
-    op = yes_or_no('请确保手机打开了 ADB 并连接了电脑，'
-                   '然后打开跳一跳并【开始游戏】后再用本程序，确定开始？')
-    if not op:
-        print('bye')
-        return
+
     print('程序版本号：{}'.format(VERSION))
     debug.dump_device_info()
     screenshot.check_screenshot()

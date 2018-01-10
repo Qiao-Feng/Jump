@@ -1,20 +1,5 @@
 # -*- coding: utf-8 -*-
 
-"""
-=== 思路 ===
-核心：每次落稳之后截图，根据截图算出棋子的坐标和下一个块顶面的中点坐标，
-    根据两个点的距离乘以一个时间系数获得长按的时间
-识别棋子：靠棋子的颜色来识别位置，通过截图发现最下面一行大概是一条
-    直线，就从上往下一行一行遍历，比较颜色（颜色用了一个区间来比较）
-    找到最下面的那一行的所有点，然后求个中点，求好之后再让 Y 轴坐标
-    减小棋子底盘的一半高度从而得到中心点的坐标
-识别棋盘：靠底色和方块的色差来做，从分数之下的位置开始，一行一行扫描，
-    由于圆形的块最顶上是一条线，方形的上面大概是一个点，所以就
-    用类似识别棋子的做法多识别了几个点求中点，这时候得到了块中点的 X
-    轴坐标，这时候假设现在棋子在当前块的中心，根据一个通过截图获取的
-    固定的角度来推出中点的 Y 坐标
-最后：根据两点的坐标算距离乘以系数来获取长按时间（似乎可以直接用 X 轴距离）
-"""
 from __future__ import print_function, division
 import os
 import sys
@@ -49,7 +34,7 @@ piece_base_height_1_2 = config['piece_base_height_1_2']
 piece_body_width = config['piece_body_width']
 piece_body_height_1_2 = config['piece_body_height_1_2']
 sinA = config['sinA']
-# 建设棋子跳跃的方向与水平面的角度固定，则秩序要求的目标点和棋子的水平距离，则可根据 c=a/siaA求得距离
+tanA = config['tanA']
 
 
 def set_button_position(w, h):
@@ -68,7 +53,7 @@ def jump(distance):
     """
     跳跃一定的距离
     """
-    press_time = distance / sinA
+    press_time = distance + press_coefficient
     press_time = max(press_time, 200)   # 设置 200ms 是最小的按压时间
     press_time = int(press_time)
     cmd = 'adb shell input swipe {x1} {y1} {x2} {y2} {duration}'.format(
@@ -124,7 +109,7 @@ def find_piece(w, h, im_pixel, scan_start_x, scan_start_y):
         if piece_x_c:
             piece_y_max = i
             piece_x = int(piece_x_sum / piece_x_c)
-            piece_y = piece_y_max - piece_body_height_1_2
+            piece_y = piece_y_max
             break
 
     return piece_x, piece_y
@@ -137,6 +122,7 @@ def find_board(w, h, im_pixel, piece_x, piece_y, scan_start_y):
     board_x_c = 0
     board_y_sum = 0
     board_y_c = 0
+    board_y_top = 0
 
     # 缩小扫描范围，如果棋子在左侧，则从棋子向右扫描，反之相反
     if piece_x < w / 2:
@@ -163,14 +149,18 @@ def find_board(w, h, im_pixel, piece_x, piece_y, scan_start_y):
         if board_x_c:
             board_x = int(board_x_sum / board_x_c)
             # 临时保存 新块顶点的 Y坐标
-            board_y = i
+            board_y_top = i
             break
 
     # 开始扫描   新增目标块右顶点 Y坐标（从上到下，从右到左）
 #     if board_x < piece_x:  # 如果新块在棋子的左侧，且棋子和新块非常近，则从棋子的左侧向扫描，否则从新块
 #         board_x_end = max(board_x + 200, int(piece_x - piece_body_width / 2))
-    board_y_start = board_y
-    board_y_end = int(board_y + 187)
+    if abs(board_x - piece_x) < 300:  # 如果新块和棋子太近，则取固定值
+        board_y = piece_y - abs((board_x - piece_x) * tanA)
+        return board_x, board_y
+
+    board_y_start = board_y_top
+    board_y_end = int(board_y_top + 187)
 
     for i in range(board_x, w):  # 从右到左
         board_y_temp = 0
@@ -212,6 +202,7 @@ def main():
     """
     主函数
     """
+
     print('程序版本号：{}'.format(VERSION))
     debug.dump_device_info()
     screenshot.check_screenshot()
@@ -231,7 +222,7 @@ def main():
         ts = int(time.time())
         print(ts, piece_x, piece_y, board_x, board_y)
         set_button_position(w, h)
-        jump(abs(piece_x - board_x))
+        jump(math.sqrt((board_x - piece_x) ** 2 + (board_y - piece_y) ** 2))
         if DEBUG_SWITCH:
             debug.save_debug_screenshot(ts, im, piece_x,
                                         piece_y, board_x, board_y)
