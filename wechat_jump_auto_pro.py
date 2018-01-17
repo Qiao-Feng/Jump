@@ -42,11 +42,11 @@ def set_button_position(w, h):
     将 swipe 设置为 `再来一局` 按钮的位置
     """
     global swipe_x1, swipe_y1, swipe_x2, swipe_y2
-    left = int(w / 2)
-    top = int(1584 * (h / 1920.0))
-    left = int(random.uniform(left - 50, left + 50))
-    top = int(random.uniform(top - 10, top + 10))    # 随机防 ban
-    swipe_x1, swipe_y1, swipe_x2, swipe_y2 = left, top, left, top
+    left1 = int(w / 2)
+    top1 = int(1584 * (h / 1920.0))
+    left2 = int(random.uniform(left1 - 50, left1 + 50))
+    top2 = int(random.uniform(top1 - 10, top1 + 10))    # 随机防 ban
+    swipe_x1, swipe_y1, swipe_x2, swipe_y2 = left1, top1, left2, top2
 
 
 def jump(distance):
